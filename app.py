@@ -1,10 +1,9 @@
 from flask import Flask, request, jsonify
 from pymilvus import Collection, utility
-from food import *
-from festival import * 
-from movie import *
-from weather import *
-from clova import *
+from dataset.food import *
+from dataset.festival import * 
+from dataset.weather import *
+from dataset.clova import *
 from dotenv import load_dotenv
 import os
 
@@ -180,4 +179,4 @@ def html_chat():
 
     
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=True, host='0.0.0.0', port=os.environ.get('PORT'))
