@@ -41,15 +41,14 @@ class EmbeddingExecutor:
     @staticmethod
     def create_chunked_festival(data):
         text_for_embedding = (
-            f"category: festival, "
-            f"title: {data.get('TITLE')}, "
-            f"place 장소: {data.get('PLACE')}, "  
-            f"guName: {data.get('GUNAME')}, "
-            f"start_date: {data.get('STRTDATE')}, "
-            f"end_date: {data.get('END_DATE')}, "
-            f"link: {data.get('ORG_LINK')}, "
-            f"x_coordinates: {data.get('LAT')}, " 
-            f"y_coordinates: {data.get('LOT')}"
+            f"카테고리: 축제, "
+            f"축제 이름: {data.get('TITLE')}, "
+            f"축제 장소: {data.get('PLACE')}, "  
+            f"자치구: {data.get('GUNAME')}, "
+            f"시작 일자: {data.get('STRTDATE')}, "
+            f"종료 일자: {data.get('END_DATE')}, "
+            f"예약 사이트: {data.get('ORG_LINK')}, "
+            f"위치: ({data.get('LAT')}, {data.get('LOT')})"
         )
         return text_for_embedding
 
@@ -57,22 +56,19 @@ class EmbeddingExecutor:
     def create_chunked_food(data):
         text_for_embedding = (
             f"카테고리: 음식점, "
-            f"장소명: {data.get('name')}, "
-            f"자치구: {data.get('guName')}, "
-            f"상세 주소: {data.get('address')}, "
-            f"전화번호: '{data.get('phoneNumber')}, "
-            f"식당 이름: {data.get('name')}, "
-            f"식당 주소: {data.get('address')}, "
-            f"업종명: {data.get('category1')}, "
+            f"이름: {data.get('title')}, "
+            f"전화번호: {data.get('phoneNumber')}, "
+            f"구: {data.get('guName')}, "
+            f"주소: {data.get('address')}, "
             f"위치: ({data.get('GPSx')}, {data.get('GPSy')})"
+            f"키워드: {data.get('majorCategory')}, {data.get('subCategory')}"
         )
         return text_for_embedding
-    
+
     @staticmethod
     def create_chunked_movie(data):
         text_for_embedding = (
             f"카테고리: 영화,"
-            f"id: {data.get('movieCd')}, "
             f"영화 제목: {data.get('movieNm')}, "
             f"박스오피스 순위: {data.get('rank')}, "
             f"개봉 일자: '{data.get('openDt')}, "
@@ -93,6 +89,18 @@ class EmbeddingExecutor:
             f"최고 기온: {data.get('tempMax')}, "
             f"기압: {data.get('pressure')}, "
             f"습도: {data.get('humidity')}"
+        )
+        return text_for_embedding
+    
+    @staticmethod
+    def create_chunked_performance(data):
+        text_for_embedding = (
+            f"카테고리: 공연, {data.get('genrenm')}, "
+            f"공연 제목: {data.get('prfnm')}, "
+            f"공연 시작 일자: {data.get('prfpdfrom')}, "
+            f"공연 종료 일자: {data.get('prfpdto')}, "
+            f"공연 장소: '{data.get('fcltynm')}, "
+            f"포스터 이미지: {data.get('poster')}"
         )
         return text_for_embedding
 

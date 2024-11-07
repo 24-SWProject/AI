@@ -2,7 +2,7 @@ import time
 import requests
 from pymilvus import connections, Collection, FieldSchema, CollectionSchema, DataType, utility
 from tqdm import tqdm
-from clova import *
+from dataset.clova import *
 from dotenv import load_dotenv
 import os
 
@@ -12,7 +12,7 @@ load_dotenv()
 # Milvus 연결
 def connect_to_milvus():
     try:
-        connections.connect(alias="default", host='3.35.133.197', port='19530')
+        connections.connect(alias=os.environ.get('MILVUS_ALIAS'), host=os.environ.get('MILVUS_AWS_HOST'), port=os.environ.get('MILVUS_PORT'))
         print("Milvus에 성공적으로 연결되었습니다.")
     except Exception as e:
         print(f"Milvus 연결 오류: {e}")
@@ -50,8 +50,7 @@ def embedding_festival_data():
             response_data = embedding_executor.execute({"text": chunked_document})
             chunked_html.append({
                 'text': chunked_document,
-                'embedding': response_data,
-                'source': chunked_document
+                'embedding': response_data
             })
             time.sleep(1)
         except Exception as e:
@@ -73,7 +72,6 @@ def indexing_festival_data():
     # 필드 및 스키마 정의
     fields = [
         FieldSchema(name="id", dtype=DataType.INT64, is_primary=True, auto_id=True),
-        FieldSchema(name="source", dtype=DataType.VARCHAR, max_length=3000),
         FieldSchema(name="text", dtype=DataType.VARCHAR, max_length=9000),
         FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=1024)
     ]
@@ -85,17 +83,15 @@ def indexing_festival_data():
 
     # 데이터 준비
     chunked_html = embedding_festival_data()
-    source_list = []
     text_list = []
     embedding_list = []
 
     # 데이터를 entities 리스트에 추가
     for item in chunked_html:
-        source_list.append(item['source'])
         text_list.append(item['text'])
         embedding_list.append(item['embedding'])
 
-    entities = [source_list, text_list, embedding_list]
+    entities = [text_list, embedding_list]
     
     # 인덱스 생성
     try:

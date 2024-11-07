@@ -2,7 +2,7 @@ import time
 import requests
 from pymilvus import connections, Collection, FieldSchema, CollectionSchema, DataType, utility
 from tqdm import tqdm
-from clova import *
+from dataset.clova import *
 from dotenv import load_dotenv
 import os
 
@@ -11,7 +11,7 @@ load_dotenv()
 # Milvus 연결
 def connect_to_milvus():
     try:
-        connections.connect(alias="default", host='3.35.133.197', port='19530')
+        connections.connect(alias=os.environ.get('MILVUS_ALIAS'), host=os.environ.get('MILVUS_AWS_HOST'), port=os.environ.get('MILVUS_PORT'))
         print("Milvus에 성공적으로 연결되었습니다.")
     except Exception as e:
         print(f"Milvus 연결 오류: {e}")
