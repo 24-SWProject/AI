@@ -5,6 +5,7 @@ from dataset.festival import *
 # from dataset.weather import *
 from dataset.clova import *
 from dataset.performance import *
+from dataset.weather import *
 from dotenv import load_dotenv
 import os
 
@@ -22,13 +23,13 @@ def get_festival():
         return jsonify({"error": f"데이터를 가져오는 데 실패했습니다. 에러: {str(e)}"}), 400
 
 # weather data (cycle: every day)
-# @app.route('/weather', methods=['GET'])
-# def get_weather():
-#     try:
-#         indexing_weather_data()
-#         return jsonify({"message": "데이터가 성공적으로 임베딩되었습니다."}), 200
-#     except Exception as e: 
-#         return jsonify({"error": f"데이터를 가져오는 데 실패했습니다. 에러: {str(e)}"}), 400
+@app.route('/weather', methods=['GET'])
+def get_weather():
+    try:
+        indexing_weather_data()
+        return jsonify({"message": "데이터가 성공적으로 임베딩되었습니다."}), 200
+    except Exception as e: 
+        return jsonify({"error": f"데이터를 가져오는 데 실패했습니다. 에러: {str(e)}"}), 400
     
 # food data (cycle: ?)
 @app.route('/food', methods=['GET'])
@@ -153,4 +154,4 @@ def html_chat():
 
     
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=os.environ.get('PORT'))
+    app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT')))

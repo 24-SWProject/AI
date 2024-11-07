@@ -11,7 +11,7 @@ load_dotenv()
 # Milvus 연결
 def connect_to_milvus():
     try:
-        connections.connect(alias=os.environ.get('MILVUS_ALIAS'), host=os.environ.get('MILVUS_AWS_HOST'), port=os.environ.get('MILVUS_PORT'))
+        connections.connect(alias=os.environ.get('MILVUS_ALIAS'), host=os.environ.get('MILVUS_AWS_HOST'), port=int(os.environ.get("MILVUS_PORT")))
         print("Milvus에 성공적으로 연결되었습니다.")
     except Exception as e:
         print(f"Milvus 연결 오류: {e}")
@@ -23,7 +23,7 @@ def fetch_food_data(offset=0, limit=1000):
         user=os.environ.get('DATABASE_USERNAME'),
         password=os.environ.get('DATABASE_PASSWORD'),
         database=os.environ.get('DATABASE_NAME'),
-        port=os.environ.get('DATABASE_PORT'),
+        port=int(os.environ.get('DATABASE_PORT')),
         cursorclass=pymysql.cursors.DictCursor
     )
     try:
@@ -54,7 +54,7 @@ def chunked_food_data(embedding_executor):
 
         offset += limit  # 다음 청크로 이동
 
-    print(all_chunked_text)
+    # print(all_chunked_text)
     return all_chunked_text  # 모든 청크가 포함된 리스트 반환
 
 
@@ -81,7 +81,7 @@ def embedding_food_data():
         except Exception as e:
             print(f"Unexpected error: {e}")
 
-    print(chunked_html)
+    # print(chunked_html)
     return chunked_html
 
 # 4. indexing

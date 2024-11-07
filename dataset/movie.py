@@ -2,7 +2,7 @@ import time
 import requests
 from pymilvus import connections, Collection, FieldSchema, CollectionSchema, DataType, utility
 from tqdm import tqdm
-from clova import *
+from dataset.clova import *
 from dotenv import load_dotenv
 import os
 
