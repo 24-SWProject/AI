@@ -5,13 +5,20 @@ import pymysql
 from dataset.clova import *
 from dotenv import load_dotenv
 import os
+from time import sleep
 
 load_dotenv()
 
 # Milvus 연결
 def connect_to_milvus():
     try:
-        connections.connect(alias=os.environ.get('MILVUS_ALIAS'), host=os.environ.get('MILVUS_AWS_HOST'), port=int(os.environ.get("MILVUS_PORT")))
+        connections.connect(
+            alias=os.environ.get('MILVUS_ALIAS'),
+            host=os.environ.get('MILVUS_AWS_HOST'),
+            port=int(os.environ.get("MILVUS_PORT")),
+            max_send_message_length=512 * 1024 * 1024,  # 512MB
+            max_receive_message_length=512 * 1024 * 1024  # 512MB
+        )
         print("Milvus에 성공적으로 연결되었습니다.")
     except Exception as e:
         print(f"Milvus 연결 오류: {e}")
@@ -37,13 +44,14 @@ def fetch_food_data(offset=0, limit=1000):
         connection.close()
 
 # 2. chunking
-def chunked_food_data(embedding_executor):
+def chunked_food_data(embedding_executor, total_limit=1000):
     offset = 0
     limit = 1000
+    fetched = 0
     all_chunked_text = []  # 모든 청크를 저장할 리스트
 
     # 데이터가 없을 때까지 반복적으로 가져오기
-    while True:
+    while fetched < total_limit:
         results = fetch_food_data(offset, limit)
         if not results:  # 더 이상 데이터가 없으면 중지
             break
@@ -55,11 +63,11 @@ def chunked_food_data(embedding_executor):
         offset += limit  # 다음 청크로 이동
 
     # print(all_chunked_text)
-    return all_chunked_text  # 모든 청크가 포함된 리스트 반환
+    return all_chunked_text[:total_limit]  # 모든 청크가 포함된 리스트 반환
 
 
 # 3. Embedding
-def embedding_food_data():
+def embedding_food_data(total_limit=100):
     embedding_executor = EmbeddingExecutor(
         host=os.environ.get('CLOVASTUDIO_EMBEDDING_HOST'),
         api_key=os.environ.get('CLOVASTUDIO_EMBEDDING_API_KEY'),
@@ -67,7 +75,7 @@ def embedding_food_data():
         request_id=os.environ.get('CLOVASTUDIO_EMBEDDING_REQUEST_ID')
     )
     
-    chunked_text_list = chunked_food_data(embedding_executor)
+    chunked_text_list = chunked_food_data(embedding_executor, total_limit)
     chunked_html = []
 
     for chunked_document in tqdm(chunked_text_list):
@@ -85,7 +93,7 @@ def embedding_food_data():
     return chunked_html
 
 # 4. indexing
-def indexing_food_data():
+def indexing_food_data(total_limit=100):
     connect_to_milvus()
     collection_name = "food_hereforus"
 
@@ -107,7 +115,7 @@ def indexing_food_data():
     print(f"컬렉션 '{collection_name}'이 생성되었습니다.")
 
     # 데이터 준비
-    chunked_html = embedding_food_data()
+    chunked_html = embedding_food_data(total_limit)
     text_list = []
     embedding_list = []
 
@@ -115,6 +123,7 @@ def indexing_food_data():
     for item in chunked_html:
         text_list.append(item['text'])
         embedding_list.append(item['embedding'])
+        print(item)
 
     # Milvus에서 요구하는 형태로 데이터를 통합
     entities = [text_list, embedding_list]
@@ -133,11 +142,17 @@ def indexing_food_data():
         "params": {"M": 8, "efConstruction": 200}
     }
     collection.create_index(field_name="embedding", index_params=index_params)
-    utility.index_building_progress("food_hereforus")
     
-    # print([index.params for index in collection.indexes])
-    print("인덱스 생성이 완료되었습니다.")
-    
+    # 인덱스 생성 완료될 때까지 대기
+    while True:
+        progress = utility.index_building_progress(collection_name)
+        if progress["state"] == "Finished":
+            print("인덱스 생성이 완료되었습니다.")
+            break
+        else:
+            print("인덱스 생성 중... 잠시 기다려 주세요.")
+            sleep(1)
+            
     # 컬렉션 로드
     collection.load()
     print(f"컬렉션 '{collection_name}'이 로드되었습니다.")

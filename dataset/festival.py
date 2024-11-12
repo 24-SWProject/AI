@@ -12,7 +12,9 @@ load_dotenv()
 # Milvus 연결
 def connect_to_milvus():
     try:
-        connections.connect(alias=os.environ.get('MILVUS_ALIAS'), host=os.environ.get('MILVUS_AWS_HOST'), port=os.environ.get('MILVUS_PORT'))
+        connections.connect(alias=os.environ.get('MILVUS_ALIAS'),
+                            host=os.environ.get('MILVUS_AWS_HOST'),
+                            port=int(os.environ.get("MILVUS_PORT")))
         print("Milvus에 성공적으로 연결되었습니다.")
     except Exception as e:
         print(f"Milvus 연결 오류: {e}")

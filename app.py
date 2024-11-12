@@ -5,7 +5,7 @@ from dataset.festival import *
 # from dataset.weather import *
 from dataset.clova import *
 from dataset.performance import *
-from dataset.weather import *
+from dataset.movie import *
 from dotenv import load_dotenv
 import os
 
@@ -22,11 +22,11 @@ def get_festival():
     except Exception as e: 
         return jsonify({"error": f"데이터를 가져오는 데 실패했습니다. 에러: {str(e)}"}), 400
 
-# weather data (cycle: every day)
-@app.route('/weather', methods=['GET'])
+# movie data (cycle: every day)
+@app.route('/movie', methods=['GET'])
 def get_weather():
     try:
-        indexing_weather_data()
+        indexing_movie_data()
         return jsonify({"message": "데이터가 성공적으로 임베딩되었습니다."}), 200
     except Exception as e: 
         return jsonify({"error": f"데이터를 가져오는 데 실패했습니다. 에러: {str(e)}"}), 400
@@ -54,12 +54,18 @@ def get_performance():
 def html_chat():
     connect_to_milvus()
     collection_name = "festival_hereforus"
-    collections = ["festival_hereforus", "food_hereforus", "performance_hereforus"]  
+    collections = ["festival_hereforus", "food_hereforus", "performance_hereforus", "movie_hereforus"]  
 
     data = request.get_json()
-    keyword = data.get('keyword')
+    keyword_list = data.get('keyword')
+    
+    if isinstance(keyword_list, list):
+        keyword = ", ".join(keyword_list)
+    else:
+        keyword = keyword_list  # 이미 문자열이라면 그대로 사용
+    
     query_vector = query_embed(keyword)
-
+    
     search_params = {"metric_type": "IP", "params": {"ef": 64}}
     reference = []
 
@@ -91,33 +97,25 @@ def html_chat():
     )
 
     preset_text = [
-        {
-            "role": "system",
-            "content": (
-                 "- `place` 항목은 반드시 5개의 장소를 고정으로 반환해야 합니다. "
-                "장소들은 사용자의 키워드에 맞춰, 각기 다른 카테고리(예: 음식점, 카페, 볼거리 등)를 포함해야 합니다. "
-                "각 장소는 사용자가 입력한 분위기, 음식 종류, 활동, 테마, 시간대 등의 키워드를 최대한 반영하여 추천합니다.\n\n"
-                "- 사용자가 `행사`, `공연` 키워드를 입력할 경우, `place` 항목의 첫 번째 장소는 reference 내용을 바탕으로 한 행사 장소가 되어야 하며, 나머지 4개 장소는 AI가 다른 장소로 추천해야 합니다.\n\n"
-                "- 모든 장소는 최적의 동선을 고려해 추천하며, JSON 형식과 필드명은 예시와 정확히 일치해야 합니다.\n\n"
-                "JSON 응답 예시:\n\n"
-                "{\n"
-                "  \"place\": [\n"
-                "    {\n"
-                "      \"guName\": \"예시구\",\n"
-                "      \"place\": \"예시아드레스\",\n"
-                "      \"name\": \"예시이름\",\n"
-                "      \"category\": \"예시카테고리\",\n"
-                "      \"openDate\": \"공연, 행사 시작일자\",\n"
-                "      \"endDate\": \"공연, 행사 종료일자\",\n"
-                "      \"poster\": \"공연, 행사 이미지\",\n"
-                "      \"link\": \공연, 행사 링크\",\n"
-                "    }\n"
-                "  ]\n"
-                "}\n\n"
-                "- JSON 형식과 필드명은 예시와 정확히 일치해야 하며, `place` 항목에는 항상 최소 5개의 장소를 포함해야 합니다."
-            )
-        }
-        ]
+    {
+        "role": "system",
+        "content": (
+            "- 음식점, 행사, 관광 명소 중 각 1개씩, 총 3개의 장소를 추천해야 합니다.\n\n"
+            "- 음식점은 `reference`의 정보에 기반하여 추천하며, **행사는 영화, 공연, 축제 중 사용자가 입력한 키워드에 맞는 항목을 `reference`에서 추천**합니다.\n\n"
+            "- 관광 명소는 사용자가 입력한 키워드(예: 분위기, 활동, 테마, 시간대 등)를 반영하여 AI가 추천합니다.\n\n"
+            "- '영화' 키워드를 입력한 경우에는 `reference`에서 최신 개봉 영화 또는 높은 박스오피스 순위의 영화를 추천합니다.\n\n"
+            "- 응답 형식:\n"
+            "  예: '중구에서 저녁에 실내에서 조용히 즐길 수 있는 음식점과 영화, 명소들을 추천해 드리겠습니다.'\n\n"
+            "  1. **음식점**: [음식점 이름] - 상세 설명만, 주소 제외\n\n"
+            "  2. **행사**: [영화/공연/축제 이름] - 상세 설명만\n\n"
+            "  3. **관광 명소**: [관광 명소 이름] - 상세 설명만\n\n"
+            "- 각 장소에 대해 풍부한 설명을 제공하며, **주소나 위치 정보는 포함하지 않습니다.**\n\n"
+            "- 반드시 음식점, 행사, 관광 명소 3가지를 포함한 추천을 제공합니다."
+        )
+    }
+]
+
+
     
     reference_content = "\n".join([f"{ref['text']}" for ref in reference])
     preset_text.append({
@@ -127,14 +125,14 @@ def html_chat():
  
     preset_text.append({"role": "user", "content": keyword})
 
-    # print(preset_text)
+    print(preset_text)
 
     request_data = {
         'messages': preset_text,
         'topP': 0.2,
         'topK': 0,
         'maxTokens': 1024,
-        'temperature': 0.4,
+        'temperature': 0.7,
         'repeatPenalty': 5.0,
         'stopBefore': [],
         'includeAiFilters': True,
