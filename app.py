@@ -2,7 +2,6 @@ from flask import Flask, request, jsonify
 from pymilvus import Collection, utility
 from dataset.food import *
 from dataset.festival import * 
-# from dataset.weather import *
 from dataset.clova import *
 from dataset.performance import *
 from dataset.movie import *
@@ -12,6 +11,16 @@ import os
 load_dotenv()
 
 app = Flask(__name__)
+
+# Milvus 연결
+def connect_to_milvus():
+    try:
+        connections.connect(alias=os.environ.get('MILVUS_ALIAS'),
+                            host=os.environ.get('MILVUS_HOST'),
+                            port=int(os.environ.get("MILVUS_PORT")))
+        print("Milvus에 성공적으로 연결되었습니다.")
+    except Exception as e:
+        print(f"Milvus 연결 오류: {e}")
 
 # festival data (cycle: every day)
 @app.route('/festival', methods=['GET'])
@@ -35,7 +44,7 @@ def get_weather():
 @app.route('/food', methods=['GET'])
 def get_food():
     try:
-        indexing_food_data()
+        indexing_food_data_in_batches()
         return jsonify({"message": "데이터가 성공적으로 임베딩되었습니다."}), 200
     except Exception as e: 
         return jsonify({"error": f"데이터를 가져오는 데 실패했습니다. 에러: {str(e)}"}), 400
@@ -49,26 +58,28 @@ def get_performance():
     except Exception as e: 
         return jsonify({"error": f"데이터를 가져오는 데 실패했습니다. 에러: {str(e)}"}), 400
 
-# recommend course
-@app.route('/course', methods=['POST'])
-def html_chat():
-    connect_to_milvus()
-    collection_name = "festival_hereforus"
-    collections = ["festival_hereforus", "food_hereforus", "performance_hereforus", "movie_hereforus"]  
 
+def recommendByDB():
+    # milvus 연결
+    connect_to_milvus()
+
+    # 요청 데이터 읽기
     data = request.get_json()
     keyword_list = data.get('keyword')
     
     if isinstance(keyword_list, list):
         keyword = ", ".join(keyword_list)
     else:
-        keyword = keyword_list  # 이미 문자열이라면 그대로 사용
+        keyword = keyword_list  
     
+    # Query 벡터 생성
     query_vector = query_embed(keyword)
-    
-    search_params = {"metric_type": "IP", "params": {"ef": 64}}
-    reference = []
 
+    search_params = {"metric_type": "IP", "params": {"ef": 64}}
+    collections = ["festival_hereforus", "performance_hereforus", "food_hereforus"]
+    aggregated_results = []
+ 
+    # 컬렉션에서 검색
     for collection_name in collections:
         if utility.has_collection(collection_name):
             collection = Collection(collection_name)
@@ -78,17 +89,50 @@ def html_chat():
                 data=[query_vector],
                 anns_field="embedding",
                 param=search_params,
-                limit=5,  
-                output_fields=["text"]
+                limit=1,  
+                output_fields=["id", "text"]
             )
-            
-            # 검색 결과를 reference 리스트에 추가
-            for hit in results[0]:
-                reference.append({
+
+            aggregated_results.extend([
+                {
+                    "collection": collection_name,  # 컬렉션 이름 추가
+                    "id": hit.entity.get("id"),
                     "distance": hit.distance,
                     "text": hit.entity.get("text")
-                })
+                }
+                for hit in results[0]
+            ])
 
+    # JSON 직렬화가 가능한 데이터 반환
+    print(aggregated_results)
+    return aggregated_results
+
+
+@app.route('/course', methods=['POST'])
+def recommendByClova():
+    data = recommendByDB()
+
+    # 컬렉션별로 데이터 분리
+    festival_results = [item for item in data if item["collection"] == "festival_hereforus"]
+    performance_results = [item for item in data if item["collection"] == "performance_hereforus"]
+    food_results = [item for item in data if item["collection"] == "food_hereforus"]
+
+    print(performance_results)
+
+    # 축제와 공연 각각의 id 리스트 생성
+    festival_ids = [item["id"] for item in festival_results]
+    performance_ids = [item["id"] for item in performance_results]
+    food_ids = [item["id"] for item in food_results]
+
+    # 축제와 공연 각각의 text 리스트 생성
+    festival_texts = [item["text"] for item in festival_results]
+    performance_texts = [item["text"] for item in performance_results]
+    food_texts = [item["text"] for item in food_results]
+
+    # 요청 데이터 읽기
+    bodyResponse = request.get_json()
+    keyword_list = bodyResponse.get('keyword')
+    
     completion_executor = CompletionExecutor(
         host=os.environ.get('CLOVASTUDIO_MODEL_HOST'),
         api_key=os.environ.get('CLOVASTUDIO_MODEL_API_KEY'),
@@ -100,30 +144,38 @@ def html_chat():
     {
         "role": "system",
         "content": (
-            "- 음식점, 행사, 관광 명소 중 각 1개씩, 총 3개의 장소를 추천해야 합니다.\n\n"
-            "- 음식점은 `reference`의 정보에 기반하여 추천하며, **행사는 영화, 공연, 축제 중 사용자가 입력한 키워드에 맞는 항목을 `reference`에서 추천**합니다.\n\n"
-            "- 관광 명소는 사용자가 입력한 키워드(예: 분위기, 활동, 테마, 시간대 등)를 반영하여 AI가 추천합니다.\n\n"
-            "- '영화' 키워드를 입력한 경우에는 `reference`에서 최신 개봉 영화 또는 높은 박스오피스 순위의 영화를 추천합니다.\n\n"
-            "- 응답 형식:\n"
-            "  예: '중구에서 저녁에 실내에서 조용히 즐길 수 있는 음식점과 영화, 명소들을 추천해 드리겠습니다.'\n\n"
-            "  1. **음식점**: [음식점 이름] - 상세 설명만, 주소 제외\n\n"
-            "  2. **행사**: [영화/공연/축제 이름] - 상세 설명만\n\n"
-            "  3. **관광 명소**: [관광 명소 이름] - 상세 설명만\n\n"
-            "- 각 장소에 대해 풍부한 설명을 제공하며, **주소나 위치 정보는 포함하지 않습니다.**\n\n"
-            "- 반드시 음식점, 행사, 관광 명소 3가지를 포함한 추천을 제공합니다."
+            f"- {keyword_list[0]}에 있는 {keyword_list[3]} 시간대부터 {keyword_list[1]}에서 놀 만한 {keyword_list[2]} 분위기의 {keyword_list[5]}이 있는 장소들과 {keyword_list[4]} 종류의 음식점 한 곳을 포함한 데이트 코스를 추천해줘.\n\n"
+            "-  장소를 **시간대별로** 1시간 간격으로 추천해줘. 동선이 효율적이도록 고려해서 장소 간 이동이 효율적이도록 해줘. \n"
+            "- 각 장소의 방문 이유와 예상 활동을 간단히 설명해주세요.\n"
+            "- 시간대에 맞는 장소를 추천합니다. 특히 음식점은 한 번 정도만 추천하는 것이 적당합니다."
+            "- 음식점과 공연, 축제에 대한 정보는 반드시 reference에 포함된 음식점 정보를 반드시 활용하여 추천합니다.\n"
+            "- 답변 형식:\n"
+            "  - 반드시 친근한 반말로 답변해줘.\n"
         )
     }
-]
+    ]
 
+    preset_text.append(
+        {
+            "role": "assistant",
+            "content": f"reference: {festival_texts}"
+        }
+    )
+
+    preset_text.append(
+        {
+            "role": "assistant",
+            "content": f"reference: {performance_texts}"
+        }
+    )
 
     
-    reference_content = "\n".join([f"{ref['text']}" for ref in reference])
-    preset_text.append({
-        "role": "system",
-        "content": f"reference: {reference_content}"
-    })
- 
-    preset_text.append({"role": "user", "content": keyword})
+    preset_text.append(
+        {
+            "role": "assistant",
+            "content": f"reference: {food_texts}"
+        }
+    )
 
     print(preset_text)
 
@@ -138,17 +190,22 @@ def html_chat():
         'includeAiFilters': True,
         'seed': 0
     }
-
  
-    # LLM 생성 답변 반환
+       # LLM 응답 생성
     try:
-        response_data = completion_executor.execute(request_data)
+        response_data = completion_executor.execute(request_data)  # LLM 응답
         print(response_data)
-        return jsonify({"response": response_data}), 200
+
+        # JSON 응답 구성
+        return jsonify({
+            "llm_response": response_data,  # LLM의 추천 결과
+            "festival_results": festival_results,  # 축제 데이터
+            "performance_results": performance_results,  # 공연 데이터
+            "food_results": food_results
+        }), 200
     except Exception as e:
         print(f"Error during LLM response: {e}")
         return jsonify({"error": f"LLM 응답 중 오류 발생: {str(e)}"}), 500
-
 
     
 if __name__ == '__main__':

@@ -4,36 +4,44 @@ from pymilvus import connections, Collection, FieldSchema, CollectionSchema, Dat
 from tqdm import tqdm
 from dataset.clova import *
 from dotenv import load_dotenv
+from datetime import datetime
 import os
 
-load_dotenv()
-
+load_dotenv(override=True)
 
 # Milvus 연결
 def connect_to_milvus():
     try:
         connections.connect(alias=os.environ.get('MILVUS_ALIAS'),
-                            host=os.environ.get('MILVUS_AWS_HOST'),
+                            host=os.environ.get('MILVUS_HOST'),
                             port=int(os.environ.get("MILVUS_PORT")))
         print("Milvus에 성공적으로 연결되었습니다.")
     except Exception as e:
         print(f"Milvus 연결 오류: {e}")
 
 # 1. fetch(mySQL)
-
-# 1. fetch(mySQL)
 def fetch_festival_data():
-    url = os.environ.get('FESTIVAL_URL')
+    date = datetime.now().strftime('%Y-%m-%d') 
+    url = f"{os.environ.get('FESTIVAL_URL')}?date={date}"
+    print(url)
     results = requests.get(url)
     if results.status_code == 200:
         return results.json()
     else:
         return {"error": "데이터를 가져오는 데 실패했습니다."}
 
+
 # 2. chunking
 def chunked_festival_data(embedding_executor):
     results = fetch_festival_data()
-    return [embedding_executor.create_chunked_festival(item) for item in results]
+    chunked_data = []
+    for item in results:
+        chunked = embedding_executor.create_chunked_festival(item)
+        chunked_data.append({
+            "id": item.get("id"),  # 원본 데이터에서 id 가져오기
+            "text": chunked
+        })
+    return chunked_data
 
 # 3. Embedding
 def embedding_festival_data():
@@ -45,21 +53,23 @@ def embedding_festival_data():
     )
     
     chunked_text_list = chunked_festival_data(embedding_executor)
-    chunked_html = []
+    print(chunked_text_list)
+    embedded_data = []
 
-    for chunked_document in tqdm(chunked_text_list):
+    for document in tqdm(chunked_text_list):
         try:
-            response_data = embedding_executor.execute({"text": chunked_document})
-            chunked_html.append({
-                'text': chunked_document,
-                'embedding': response_data
+            embedding = embedding_executor.execute({"text": document["text"]})
+            embedded_data.append({
+                "id": document["id"],
+                "text": document["text"],
+                "embedding": embedding
             })
             time.sleep(1)
         except Exception as e:
             print(f"Unexpected error: {e}")
 
-    print(chunked_html)
-    return chunked_html
+    print(embedded_data)
+    return embedded_data
 
 # 4. indexing
 def indexing_festival_data():
@@ -73,7 +83,7 @@ def indexing_festival_data():
 
     # 필드 및 스키마 정의
     fields = [
-        FieldSchema(name="id", dtype=DataType.INT64, is_primary=True, auto_id=True),
+        FieldSchema(name="id", dtype=DataType.INT64, is_primary=True, auto_id=False),
         FieldSchema(name="text", dtype=DataType.VARCHAR, max_length=9000),
         FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=1024)
     ]
@@ -83,18 +93,14 @@ def indexing_festival_data():
     collection = Collection(name=collection_name, schema=schema, using='default', shards_num=2)
     print(f"컬렉션 '{collection_name}'이 생성되었습니다.")
 
-    # 데이터 준비
-    chunked_html = embedding_festival_data()
-    text_list = []
-    embedding_list = []
-
     # 데이터를 entities 리스트에 추가
-    for item in chunked_html:
-        text_list.append(item['text'])
-        embedding_list.append(item['embedding'])
+    embedded_data = embedding_festival_data()
+    ids = [item['id'] for item in embedded_data]
+    texts = [item['text'] for item in embedded_data]
+    embeddings = [item['embedding'] for item in embedded_data]
 
-    entities = [text_list, embedding_list]
-    
+    entities = [ids, texts, embeddings]
+
     # 인덱스 생성
     try:
         insert_result = collection.insert(entities)
@@ -109,8 +115,7 @@ def indexing_festival_data():
     }
     collection.create_index(field_name="embedding", index_params=index_params)
     utility.index_building_progress("festival_hereforus")
-    
-    # print([index.params for index in collection.indexes])
+
     print("인덱스 생성이 완료되었습니다.")
     
     # 컬렉션 로드
