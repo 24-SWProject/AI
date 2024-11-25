@@ -103,7 +103,7 @@ def process_batch(collection, page, size, embedding_executor):
         print(f"Batch {page + 1}: 데이터 삽입 오류: {e}")
 
     # 다음 페이지 여부 확인
-    return page + 1 < 1
+    return page + 1 < data["totalPages"]
 
 # 메인 인덱싱 함수
 def indexing_food_data_in_batches(batch_size=1000):
