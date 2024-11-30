@@ -19,61 +19,8 @@ def connect_to_milvus():
     except Exception as e:
         print(f"Milvus 연결 오류: {e}")
 
-# 1. fetch(mySQL)
-def fetch_festival_data():
-    date = datetime.now().strftime('%Y-%m-%d') 
-    url = f"{os.environ.get('FESTIVAL_URL')}?date={date}"
-    print(url)
-    results = requests.get(url)
-    if results.status_code == 200:
-        return results.json()
-    else:
-        return {"error": "데이터를 가져오는 데 실패했습니다."}
-
-
-# 2. chunking
-def chunked_festival_data(embedding_executor):
-    results = fetch_festival_data()
-    chunked_data = []
-    for item in results:
-        chunked = embedding_executor.create_chunked_festival(item)
-        chunked_data.append({
-            "id": item.get("id"),  # 원본 데이터에서 id 가져오기
-            "text": chunked
-        })
-    return chunked_data
-
-# 3. Embedding
-def embedding_festival_data():
-    embedding_executor = EmbeddingExecutor(
-        host=os.environ.get('CLOVASTUDIO_EMBEDDING_HOST'),
-        api_key=os.environ.get('CLOVASTUDIO_EMBEDDING_API_KEY'),
-        api_key_primary_val=os.environ.get('CLOVASTUDIO_EMBEDDING_APIGW_API_KEY'),
-        request_id=os.environ.get('CLOVASTUDIO_EMBEDDING_REQUEST_ID')
-    )
-    
-    chunked_text_list = chunked_festival_data(embedding_executor)
-    print(chunked_text_list)
-    embedded_data = []
-
-    for document in tqdm(chunked_text_list):
-        try:
-            embedding = embedding_executor.execute({"text": document["text"]})
-            embedded_data.append({
-                "id": document["id"],
-                "text": document["text"],
-                "embedding": embedding
-            })
-            time.sleep(1)
-        except Exception as e:
-            print(f"Unexpected error: {e}")
-
-    print(embedded_data)
-    return embedded_data
-
-# 4. indexing
-def indexing_festival_data():
-    connect_to_milvus()
+# Milvus 컬렉션 설정
+def setup_collection():
     collection_name = "festival_hereforus"
 
     # 기존 컬렉션 삭제 후 재생성
@@ -92,33 +39,105 @@ def indexing_festival_data():
     # 컬렉션 생성
     collection = Collection(name=collection_name, schema=schema, using='default', shards_num=2)
     print(f"컬렉션 '{collection_name}'이 생성되었습니다.")
+    return collection
 
-    # 데이터를 entities 리스트에 추가
-    embedded_data = embedding_festival_data()
-    ids = [item['id'] for item in embedded_data]
-    texts = [item['text'] for item in embedded_data]
-    embeddings = [item['embedding'] for item in embedded_data]
+# 페이징 데이터 가져오기
+def fetch_festival_data(page, size, max_retries=5):
+    date = datetime.now().strftime('%Y-%m-%d') 
+    url = f"{os.environ.get('FESTIVAL_URL')}?date={date}&page={page}&size={size}"
+    retries = 0
+    while retries < max_retries:
+        response = requests.get(url)
+        if response.status_code == 200:
+            return response.json()
+        elif response.status_code == 429:  # Too many requests
+            retry_after = int(response.headers.get("Retry-After", 5))  # 헤더 값 또는 기본값
+            print(f"Rate limit exceeded. Retrying in {retry_after} seconds... (Attempt {retries + 1}/{max_retries})")
+            time.sleep(retry_after)
+            retries += 1
+        else:
+            print(f"HTTP {response.status_code}: {response.text}")
+            break
+    return {"error": "데이터를 가져오는 데 실패했습니다."}
 
-    entities = [ids, texts, embeddings]
+# 데이터를 청크로 나누기
+def process_batch(collection, page, size, embedding_executor):
+    # 데이터 가져오기
+    data = fetch_festival_data(page, size)
+    if "error" in data or not data["content"]:
+        print("No more data to process or an error occurred.")
+        return False
+
+    print(f"Processing page {page + 1}, size: {size}")
+    chunked_data = []
+
+    # 청크 생성
+    for item in data["content"]:
+        chunked_text = embedding_executor.create_chunked_festival(item)
+        chunked_data.append({
+            "id": item["id"],
+            "text": chunked_text
+        })
+
+    # Embedding 처리
+    embedded_data = []
+    for chunk in tqdm(chunked_data):
+        try:
+            embedding = embedding_executor.execute({"text": chunk["text"]})
+            embedded_data.append({
+                "id": chunk["id"],
+                "text": chunk["text"],
+                "embedding": embedding
+            })
+            time.sleep(1)
+        except Exception as e:
+            print(f"Embedding error for ID {chunk['id']}: {e}")
+
+    # Milvus에 데이터 삽입
+    ids = [item["id"] for item in embedded_data]
+    texts = [item["text"] for item in embedded_data]
+    embeddings = [item["embedding"] for item in embedded_data]
+
+    try:
+        collection.insert([ids, texts, embeddings])
+        print(f"Batch {page + 1}: 데이터 삽입 완료")
+    except Exception as e:
+        print(f"Batch {page + 1}: 데이터 삽입 오류: {e}")
+
+    # 다음 페이지 여부 확인
+    return page + 1 < data["totalPages"]
+    # return page + 1 < 2
+
+# 메인 인덱싱 함수
+def indexing_festival_data(batch_size=2000):
+    connect_to_milvus()
+    collection = setup_collection()
+
+    embedding_executor = EmbeddingExecutor(
+        host=os.environ.get('CLOVASTUDIO_EMBEDDING_HOST'),
+        api_key=os.environ.get('CLOVASTUDIO_EMBEDDING_API_KEY'),
+        api_key_primary_val=os.environ.get('CLOVASTUDIO_EMBEDDING_APIGW_API_KEY'),
+        request_id=os.environ.get('CLOVASTUDIO_EMBEDDING_REQUEST_ID')
+    )
+
+    # 페이징 처리
+    page = 0
+    while True:
+        more_data = process_batch(collection, page, batch_size, embedding_executor)
+        if not more_data:
+            print("모든 데이터 처리가 완료되었습니다.")
+            break
+        page += 1
 
     # 인덱스 생성
-    try:
-        insert_result = collection.insert(entities)
-        print("데이터 Insertion이 완료된 ID:", insert_result.primary_keys)
-    except Exception as e:
-        print(f"데이터 Insertion 오류: {e}")
-
     index_params = {
         "metric_type": "IP",
         "index_type": "HNSW",
         "params": {"M": 8, "efConstruction": 200}
     }
     collection.create_index(field_name="embedding", index_params=index_params)
-    utility.index_building_progress("festival_hereforus")
+    print("인덱스 생성 완료.")
 
-    print("인덱스 생성이 완료되었습니다.")
-    
     # 컬렉션 로드
     collection.load()
-    print(f"컬렉션 '{collection_name}'이 로드되었습니다.")
-    return collection
+    print(f"컬렉션 '{collection.name}'이 로드되었습니다.")

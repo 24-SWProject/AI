@@ -44,7 +44,7 @@ def get_weather():
 @app.route('/food', methods=['GET'])
 def get_food():
     try:
-        indexing_food_data_in_batches()
+        indexing_food_data()
         return jsonify({"message": "데이터가 성공적으로 임베딩되었습니다."}), 200
     except Exception as e: 
         return jsonify({"error": f"데이터를 가져오는 데 실패했습니다. 에러: {str(e)}"}), 400

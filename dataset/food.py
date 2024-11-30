@@ -62,7 +62,7 @@ def fetch_food_data(page, size, max_retries=5):
 def process_batch(collection, page, size, embedding_executor):
     # 데이터 가져오기
     data = fetch_food_data(page, size)
-    if "error" in data or not data.get("content"):
+    if "error" in data or not data["content"]:
         print("No more data to process or an error occurred.")
         return False
 
@@ -104,9 +104,10 @@ def process_batch(collection, page, size, embedding_executor):
 
     # 다음 페이지 여부 확인
     return page + 1 < data["totalPages"]
+    # return page + 1 < 2
 
 # 메인 인덱싱 함수
-def indexing_food_data_in_batches(batch_size=1000):
+def indexing_food_data(batch_size=2000):
     connect_to_milvus()
     collection = setup_collection()
 

@@ -65,9 +65,9 @@ class EmbeddingExecutor:
     @staticmethod
     def create_chunked_food(data):
         text_for_embedding = (
-            f"카테고리는 {data.get('majorCategory', '정보없음')}, 종류는 {data.get('subCategory', '정보없음')}입니다. "
-            f"{data.get('majorCategory', '정보없음')}의 이름은 '{data.get('title', '정보없음')}', "
-            f"{data.get('majorCategory', '정보없음')}의 전화번호는 {data.get('phoneNumber', '정보없음')}, "
+            f"카테고리는 음식점, 종류는 {data.get('majorCategory', '정보없음')}입니다. "
+            f"음식점의 이름은 '{data.get('title', '정보없음')}', "
+            f"음식점의 전화번호는 {data.get('phoneNumber', '정보없음')}, "
             f"자치구는 {data.get('guName', '정보없음')}, "
             f"상세 주소는 {data.get('address', '정보없음')}에 위치해있습니다."
         )
