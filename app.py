@@ -6,11 +6,15 @@ from dataset.clova import *
 from dataset.performance import *
 from dataset.movie import *
 from dotenv import load_dotenv
+from apscheduler.schedulers.background import BackgroundScheduler
 import os
 
 load_dotenv()
 
 app = Flask(__name__)
+
+sched = BackgroundScheduler(daemon=True)
+
 
 # Milvus 연결
 def connect_to_milvus():
@@ -23,22 +27,15 @@ def connect_to_milvus():
         print(f"Milvus 연결 오류: {e}")
 
 # festival data (cycle: every day)
+@sched.scheduled_job('cron', hour='0', minute='30',id='festival')
 @app.route('/festival', methods=['GET'])
 def get_festival():
     try:
         indexing_festival_data()
-        return jsonify({"message": "데이터가 성공적으로 임베딩되었습니다."}), 200
+        print("데이터가 성공적으로 임베딩되었습니다.")
     except Exception as e: 
-        return jsonify({"error": f"데이터를 가져오는 데 실패했습니다. 에러: {str(e)}"}), 400
+        print(f"데이터를 가져오는 데 실패했습니다. 에러: {str(e)}")
 
-# movie data (cycle: every day)
-@app.route('/movie', methods=['GET'])
-def get_weather():
-    try:
-        indexing_movie_data()
-        return jsonify({"message": "데이터가 성공적으로 임베딩되었습니다."}), 200
-    except Exception as e: 
-        return jsonify({"error": f"데이터를 가져오는 데 실패했습니다. 에러: {str(e)}"}), 400
     
 # food data (cycle: ?)
 @app.route('/food', methods=['GET'])
@@ -50,13 +47,14 @@ def get_food():
         return jsonify({"error": f"데이터를 가져오는 데 실패했습니다. 에러: {str(e)}"}), 400
     
 # performance data (cycle: every day)
+@sched.scheduled_job('cron', hour='0', minute='0',id='performance')
 @app.route('/performance', methods=['GET'])
 def get_performance():
     try:
         indexing_performance_data()
-        return jsonify({"message": "데이터가 성공적으로 임베딩되었습니다."}), 200
+        print("데이터가 성공적으로 임베딩되었습니다.")
     except Exception as e: 
-        return jsonify({"error": f"데이터를 가져오는 데 실패했습니다. 에러: {str(e)}"}), 400
+        print(f"데이터를 가져오는 데 실패했습니다. 에러: {str(e)}")
 
 
 def recommendByDB():
@@ -107,7 +105,6 @@ def recommendByDB():
     print(aggregated_results)
     return aggregated_results
 
-
 @app.route('/course', methods=['POST'])
 def recommendByClova():
     data = recommendByDB()
@@ -145,12 +142,13 @@ def recommendByClova():
         "role": "system",
         "content": (
             f"- {keyword_list[0]}에 있는 {keyword_list[3]} 시간대부터 {keyword_list[1]}에서 놀 만한 {keyword_list[2]} 분위기의 {keyword_list[5]}이 있는 장소들과 {keyword_list[4]} 종류의 음식점 한 곳을 포함한 데이트 코스를 추천해줘.\n\n"
-            "-  장소를 **시간대별로** 1시간 간격으로 추천해줘. 동선이 효율적이도록 고려해서 장소 간 이동이 효율적이도록 해줘. \n"
+            "-  장소를 **시간대별로** 1시간 간격으로 추천해줘. 동선이 효율적이도록 고려해서 장소 간 이동이 효율적이도록 합니다. \n"
             "- 각 장소의 방문 이유와 예상 활동을 간단히 설명해주세요.\n"
             "- 시간대에 맞는 장소를 추천합니다. 특히 음식점은 한 번 정도만 추천하는 것이 적당합니다."
             "- 음식점과 공연, 축제에 대한 정보는 반드시 reference에 포함된 음식점 정보를 반드시 활용하여 추천합니다.\n"
+            "- 행사의 일정이나 기간은 나오지 않도록 합니다."
             "- 답변 형식:\n"
-            "  - 반드시 친근한 반말로 답변해줘.\n"
+            "  - 반드시 친근한 반말로 답변해야 합니다.\n"
         )
     }
     ]
@@ -206,7 +204,9 @@ def recommendByClova():
     except Exception as e:
         print(f"Error during LLM response: {e}")
         return jsonify({"error": f"LLM 응답 중 오류 발생: {str(e)}"}), 500
-
     
+
 if __name__ == '__main__':
+    sched.start()
+
     app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT')))
