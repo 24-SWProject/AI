@@ -47,7 +47,7 @@ def get_food():
         return jsonify({"error": f"데이터를 가져오는 데 실패했습니다. 에러: {str(e)}"}), 400
     
 # performance data (cycle: every day)
-@sched.scheduled_job('cron', hour='0', minute='0',id='performance')
+@sched.scheduled_job('cron', hour='1', minute='0',id='performance')
 @app.route('/performance', methods=['GET'])
 def get_performance():
     try:
