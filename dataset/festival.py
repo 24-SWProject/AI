@@ -12,6 +12,8 @@ load_dotenv(override=True)
 # Milvus 연결
 def connect_to_milvus():
     try:
+        connections.disconnect(alias=os.environ.get('MILVUS_ALIAS'))
+
         connections.connect(alias=os.environ.get('MILVUS_ALIAS'),
                             host=os.environ.get('MILVUS_HOST'),
                             port=int(os.environ.get("MILVUS_PORT")))
@@ -30,7 +32,7 @@ def setup_collection():
 
     # 필드 및 스키마 정의
     fields = [
-        FieldSchema(name="id", dtype=DataType.INT64, is_primary=True, auto_id=False),
+        FieldSchema(name="id", dtype=DataType.VARCHAR, max_length=256, is_primary=True),
         FieldSchema(name="text", dtype=DataType.VARCHAR, max_length=9000),
         FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=1024)
     ]

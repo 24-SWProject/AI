@@ -41,12 +41,12 @@ class EmbeddingExecutor:
     @staticmethod
     def create_chunked_festival(data):
         text_for_embedding = (
-            f"카테고리는 축제입니다. "
+            f"카테고리는 축제, 장르는 {data.get('category', '정보없음')}입니다. "
             f"축제 이름은 '{data.get('title', '정보없음')}', "
             f"축제 장소는 {data.get('place', '정보없음')}, "
             f"축제 시작 일자는 {data.get('openDate', '정보없음')}, "
             f"축제 종료 일자는 {data.get('endDate', '정보없음')}, "
-            f"축제 대상은 {data.get('useTrgt', '정보없음')}입니다. "
+            f"축제 대상은 {data.get('useAge', '정보없음')}입니다. "
         )
         return text_for_embedding
     
@@ -58,7 +58,7 @@ class EmbeddingExecutor:
             f"공연의 제목은 '{data.get('title', '정보없음')}', "
             f"공연 장소는 {data.get('place', '정보없음')}, "
             f"공연 시작 일자는 {data.get('openDate', '정보없음')}, "
-            f"공연 종료 일자는 {data.get('endDate', '정보없음')}입니다. "
+            f"공연 종료 일자는 {data.get('endDate', '정보없음')}, "
         )
         return text_for_embedding
 
